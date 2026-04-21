@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>TrackAlert — Live GPS</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',system-ui,sans-serif;background:#07080d;color:#f0ede8;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+
+    /* HEADER */
+    #header{background:#0f1117;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1e2130;flex-shrink:0;z-index:1000}
+    .logo{font-size:18px;font-weight:700;color:#f5a623;letter-spacing:-0.5px}.logo span{color:#f0ede8}
+    #gps-status{display:flex;align-items:center;gap:6px;font-size:12px;color:#7a8099}
+    .status-dot{width:7px;height:7px;border-radius:50%;background:#444;flex-shrink:0;transition:background 0.3s}
+    .status-dot.locating{background:#f5a623;animation:blink 1s infinite}
+    .status-dot.found{background:#3ecf8e}
+    .status-dot.error{background:#e53e30}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+
+    /* ALERT BANNER */
+    #alert-banner{background:rgba(229,62,48,0.13);border-bottom:1px solid rgba(229,62,48,0.28);padding:9px 16px;display:none;align-items:center;gap:10px;font-size:13px;flex-shrink:0;z-index:999}
+    .alert-dot{width:8px;height:8px;border-radius:50%;background:#e53e30;flex-shrink:0;animation:blink 1s infinite}
+    #alert-text{flex:1;font-weight:500}
+    #alert-age{color:#e53e30;font-size:12px;font-family:monospace}
+
+    /* MAP */
+    #map{flex:1;z-index:1;min-height:0}
+
+    /* BOTTOM PANEL */
+    #panel{background:#0f1117;border-top:1px solid #1e2130;flex-shrink:0;z-index:1000}
+    #panel-tabs{display:flex;border-bottom:1px solid #1e2130}
+    .tab{flex:1;padding:10px;text-align:center;font-size:13px;color:#7a8099;cursor:pointer;transition:color 0.15s,border-bottom 0.15s;border-bottom:2px solid transparent}
+    .tab.active{color:#f5a623;border-bottom:2px solid #f5a623}
+    #tab-report{display:block;padding:14px 16px}
+    #tab-feed{display:none;padding:12px 16px;max-height:220px;overflow-y:auto}
+    #tab-feed::-webkit-scrollbar{width:3px}
+    #tab-feed::-webkit-scrollbar-thumb{background:#252b3b;border-radius:2px}
+
+    /* REPORT TAB */
+    .field-label{font-size:11px;color:#7a8099;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;font-weight:500}
+    #crossing-select{width:100%;padding:10px 12px;background:#141720;border:1px solid #252b3b;border-radius:10px;color:#f0ede8;font-size:14px;appearance:none;cursor:pointer;margin-bottom:12px}
+    #crossing-select option{background:#141720}
+    #status-toggle{display:flex;gap:8px;margin-bottom:12px}
+    .status-btn{flex:1;padding:10px;border-radius:10px;border:1px solid #252b3b;background:#141720;color:#7a8099;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:6px}
+    .status-btn.sel-blocked{background:rgba(229,62,48,0.18);border-color:#e53e30;color:#f07068}
+    .status-btn.sel-clear{background:rgba(62,207,142,0.12);border-color:#3ecf8e;color:#3ecf8e}
+    #submit-btn{width:100%;padding:14px;background:#f5a623;border:none;border-radius:12px;color:#0f1117;font-size:15px;font-weight:700;cursor:pointer;transition:background 0.15s,transform 0.1s;display:flex;align-items:center;justify-content:center;gap:8px}
+    #submit-btn:hover{background:#f7b84b}
+    #submit-btn:active{transform:scale(0.98)}
+    #submit-btn.done{background:#3ecf8e}
+    #submit-btn.done-red{background:#e53e30;color:#fff}
+    #add-crossing-btn{width:100%;padding:10px;background:transparent;border:1px dashed #2a3050;border-radius:10px;color:#7a8099;font-size:13px;cursor:pointer;margin-top:8px;transition:border-color 0.15s,color 0.15s}
+    #add-crossing-btn:hover{border-color:#f5a623;color:#f5a623}
+    #add-crossing-btn.adding{border-color:#f5a623;color:#f5a623;background:rgba(245,166,35,0.07)}
+
+    /* FEED */
+    .feed-item{background:#141720;border:1px solid #1e2130;border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;animation:slideIn 0.25s ease}
+    @keyframes slideIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+    .fi-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+    .fi-red{background:rgba(229,62,48,0.15)}
+    .fi-green{background:rgba(62,207,142,0.1)}
+    .fi-info{flex:1;min-width:0}
+    .fi-name{font-size:13px;font-weight:500;color:#f0ede8}
+    .fi-meta{font-size:11px;color:#7a8099;margin-top:2px}
+    .fi-badge{font-size:11px;font-family:monospace;padding:3px 8px;border-radius:6px;flex-shrink:0}
+    .badge-red{background:rgba(229,62,48,0.15);color:#f07068}
+    .badge-green{background:rgba(62,207,142,0.12);color:#3ecf8e}
+
+    /* LOCATE BTN on map */
+    #locate-btn{position:absolute;bottom:16px;right:12px;z-index:500;background:#0f1117;border:1px solid #252b3b;border-radius:10px;padding:10px 12px;color:#f5a623;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 12px rgba(0,0,0,0.5)}
+    #locate-btn:hover{background:#1a1f2e}
+    #map-hint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:500;background:rgba(245,166,35,0.92);color:#0f1117;font-size:12px;font-weight:600;padding:7px 14px;border-radius:20px;display:none;pointer-events:none;white-space:nowrap}
+
+    /* STATS BAR */
+    #stats{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #1e2130;padding:10px 0 4px}
+    .stat{text-align:center}
+    .stat-num{font-size:17px;font-weight:700;color:#f5a623;font-family:monospace}
+    .stat-label{font-size:10px;color:#7a8099;margin-top:1px}
+
+    /* Leaflet overrides */
+    .leaflet-control-zoom a{background:#141720!important;color:#f0ede8!important;border-color:#252b3b!important}
+    .leaflet-control-zoom a:hover{background:#1e2538!important}
+    .leaflet-bar{border:1px solid #252b3b!important;border-radius:8px!important;overflow:hidden}
+    .leaflet-popup-content-wrapper{background:#141720;color:#f0ede8;border:1px solid #252b3b;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.6)}
+    .leaflet-popup-tip{background:#141720}
+    .leaflet-popup-close-button{color:#7a8099!important}
+    .popup-inner{padding:4px 2px}
+    .popup-name{font-weight:600;font-size:14px;color:#f0ede8;margin-bottom:4px}
+    .popup-status-red{font-size:12px;color:#f07068}
+    .popup-status-green{font-size:12px;color:#3ecf8e}
+    .popup-status-uk{font-size:12px;color:#f5a623}
+    .popup-time{font-size:11px;color:#7a8099;margin-top:2px}
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <div class="logo">Track<span>Alert</span></div>
+  <div id="gps-status"><div class="status-dot locating" id="dot"></div><span id="gps-label">Locating you…</span></div>
+</div>
+
+<div id="alert-banner">
+  <div class="alert-dot"></div>
+  <div id="alert-text"></div>
+  <div id="alert-age"></div>
+</div>
+
+<div style="position:relative;flex:1;display:flex;flex-direction:column;min-height:0">
+  <div id="map"></div>
+  <button id="locate-btn" onclick="goToMe()">&#8982; My location</button>
+  <div id="map-hint">Tap the map to place a crossing marker</div>
+</div>
+
+<div id="panel">
+  <div id="panel-tabs">
+    <div class="tab active" onclick="showTab('report')">&#9888; Report</div>
+    <div class="tab" onclick="showTab('feed')">&#9776; Activity feed</div>
+  </div>
+
+  <div id="tab-report">
+    <div class="field-label">Crossing</div>
+    <select id="crossing-select"><option value="">— Select a crossing —</option></select>
+
+    <div class="field-label">Status</div>
+    <div id="status-toggle">
+      <button class="status-btn sel-blocked" id="btn-blocked" onclick="setStatus('blocked')">&#9888; Train blocking</button>
+      <button class="status-btn" id="btn-clear" onclick="setStatus('clear')">&#10003; All clear</button>
+    </div>
+
+    <button id="submit-btn" onclick="submitReport()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Report Now
+    </button>
+    <button id="add-crossing-btn" onclick="startAddCrossing()">+ Add a crossing at a map location</button>
+  </div>
+
+  <div id="tab-feed">
+    <div id="feed-list"></div>
+  </div>
+
+  <div id="stats">
+    <div class="stat"><div class="stat-num" id="s-users">—</div><div class="stat-label">Nearby users</div></div>
+    <div class="stat"><div class="stat-num" id="s-reports">0</div><div class="stat-label">Reports today</div></div>
+    <div class="stat"><div class="stat-num" id="s-crossings">0</div><div class="stat-label">Crossings</div></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var map, userMarker, userCircle, userLat, userLng;
+var crossings = [];
+var reports = [];
+var selectedStatus = 'blocked';
+var addingMode = false;
+var reportCount = 0;
+
+// Dark tile layer (CartoDB Dark Matter - free, no key needed)
+map = L.map('map', { zoomControl: true, attributionControl: false }).setView([32.7767, -96.7970], 13);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxZoom: 19, subdomains: 'abcd'
+}).addTo(map);
+
+// Railroad crossing SVG icon builder
+function crossingIcon(status) {
+  var color = status === 'blocked' ? '#e53e30' : status === 'clear' ? '#3ecf8e' : '#f5a623';
+  var symbol = status === 'blocked' ? '⚠' : status === 'clear' ? '✓' : '?';
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48" viewBox="0 0 40 48">'
+    + '<circle cx="20" cy="20" r="17" fill="' + color + '" fill-opacity="0.18" stroke="' + color + '" stroke-width="2"/>'
+    + '<text x="20" y="26" text-anchor="middle" font-size="16" fill="' + color + '">' + symbol + '</text>'
+    + '<line x1="20" y1="37" x2="20" y2="47" stroke="' + color + '" stroke-width="2" stroke-linecap="round"/>'
+    + '</svg>';
+  return L.divIcon({ html: svg, className: '', iconSize: [40, 48], iconAnchor: [20, 47], popupAnchor: [0, -48] });
+}
+
+// User location dot
+function userIcon() {
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">'
+    + '<circle cx="10" cy="10" r="8" fill="#4a90e2" fill-opacity="0.25" stroke="#4a90e2" stroke-width="2"/>'
+    + '<circle cx="10" cy="10" r="4" fill="#4a90e2"/>'
+    + '</svg>';
+  return L.divIcon({ html: svg, className: '', iconSize: [20,20], iconAnchor: [10,10] });
+}
+
+function addCrossing(lat, lng, name) {
+  var c = { lat: lat, lng: lng, name: name, status: 'unknown', lastReport: null };
+  var m = L.marker([lat, lng], { icon: crossingIcon('unknown') }).addTo(map);
+  m.bindPopup(buildPopup(c));
+  m.on('click', function(){ selectCrossing(crossings.length - 1); showTab('report'); });
+  c.marker = m;
+  crossings.push(c);
+  refreshSelect();
+  document.getElementById('s-crossings').textContent = crossings.length;
+  return c;
+}
+
+function buildPopup(c) {
+  var statusClass = c.status === 'blocked' ? 'popup-status-red' : c.status === 'clear' ? 'popup-status-green' : 'popup-status-uk';
+  var statusText = c.status === 'blocked' ? '⚠ Train blocking' : c.status === 'clear' ? '✓ Clear' : '? Status unknown';
+  var timeText = c.lastReport ? 'Updated ' + timeAgo(c.lastReport) : 'No reports yet';
+  return '<div class="popup-inner"><div class="popup-name">' + c.name + '</div>'
+    + '<div class="' + statusClass + '">' + statusText + '</div>'
+    + '<div class="popup-time">' + timeText + '</div></div>';
+}
+
+function refreshSelect() {
+  var sel = document.getElementById('crossing-select');
+  var val = sel.value;
+  sel.innerHTML = '<option value="">— Select a crossing —</option>';
+  crossings.forEach(function(c, i) {
+    var opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = c.name + (c.status === 'blocked' ? ' ⚠' : c.status === 'clear' ? ' ✓' : '');
+    sel.appendChild(opt);
+  });
+  if (val !== '') sel.value = val;
+}
+
+function selectCrossing(idx) {
+  document.getElementById('crossing-select').value = idx;
+}
+
+// GPS
+function locate() {
+  if (!navigator.geolocation) {
+    setGPSStatus('error', 'GPS not supported');
+    map.setView([32.7767, -96.7970], 13);
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    userLat = pos.coords.latitude;
+    userLng = pos.coords.longitude;
+    setGPSStatus('found', userLat.toFixed(4) + ', ' + userLng.toFixed(4));
+    if (userMarker) map.removeLayer(userMarker);
+    if (userCircle) map.removeLayer(userCircle);
+    userCircle = L.circle([userLat, userLng], { radius: pos.coords.accuracy || 50, color: '#4a90e2', fillColor: '#4a90e2', fillOpacity: 0.08, weight: 1 }).addTo(map);
+    userMarker = L.marker([userLat, userLng], { icon: userIcon() }).addTo(map);
+    map.setView([userLat, userLng], 15);
+    document.getElementById('s-users').textContent = Math.floor(Math.random() * 80) + 20;
+  }, function(err) {
+    setGPSStatus('error', 'Location denied — using Dallas, TX');
+    map.setView([32.7767, -96.7970], 13);
+    document.getElementById('s-users').textContent = '—';
+  }, { enableHighAccuracy: true, timeout: 10000 });
+}
+
+function goToMe() {
+  if (userLat) { map.setView([userLat, userLng], 16); }
+  else { locate(); }
+}
+
+function setGPSStatus(state, label) {
+  document.getElementById('dot').className = 'status-dot ' + state;
+  document.getElementById('gps-label').textContent = label;
+}
+
+// Add crossing mode
+function startAddCrossing() {
+  var btn = document.getElementById('add-crossing-btn');
+  addingMode = !addingMode;
+  btn.classList.toggle('adding', addingMode);
+  btn.textContent = addingMode ? '✕ Cancel — click the map to place' : '+ Add a crossing at a map location';
+  document.getElementById('map-hint').style.display = addingMode ? 'block' : 'none';
+}
+
+map.on('click', function(e) {
+  if (!addingMode) return;
+  var name = prompt('Name this crossing (e.g. "Oak St & Railway Ave"):');
+  if (!name || !name.trim()) { return; }
+  addCrossing(e.latlng.lat, e.latlng.lng, name.trim());
+  addingMode = false;
+  document.getElementById('add-crossing-btn').classList.remove('adding');
+  document.getElementById('add-crossing-btn').textContent = '+ Add a crossing at a map location';
+  document.getElementById('map-hint').style.display = 'none';
+  showTab('report');
+  selectCrossing(crossings.length - 1);
+});
+
+// Report
+function setStatus(s) {
+  selectedStatus = s;
+  document.getElementById('btn-blocked').classList.toggle('sel-blocked', s === 'blocked');
+  document.getElementById('btn-clear').classList.toggle('sel-clear', s === 'clear');
+  document.getElementById('btn-blocked').classList.toggle('status-btn', true);
+  document.getElementById('btn-clear').classList.toggle('status-btn', true);
+}
+
+function submitReport() {
+  var idx = document.getElementById('crossing-select').value;
+  if (idx === '') { alert('Please select or add a crossing first.'); return; }
+  var c = crossings[parseInt(idx)];
+  c.status = selectedStatus;
+  c.lastReport = new Date();
+  c.marker.setIcon(crossingIcon(selectedStatus));
+  c.marker.setPopupContent(buildPopup(c));
+  refreshSelect();
+  reportCount++;
+  document.getElementById('s-reports').textContent = reportCount;
+
+  var btn = document.getElementById('submit-btn');
+  if (selectedStatus === 'blocked') {
+    btn.classList.add('done-red'); btn.textContent = '✓ Reported — alerting nearby users!';
+    showAlert(c);
+  } else {
+    btn.classList.add('done'); btn.textContent = '✓ All clear reported!';
+    hideAlert();
+  }
+  addFeedItem(c, selectedStatus);
+  setTimeout(function() {
+    btn.className = ''; btn.id = 'submit-btn';
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Report Now';
+  }, 2500);
+}
+
+var alertInterval;
+function showAlert(c) {
+  var banner = document.getElementById('alert-banner');
+  document.getElementById('alert-text').textContent = 'Train blocking ' + c.name;
+  banner.style.display = 'flex';
+  var start = new Date();
+  clearInterval(alertInterval);
+  alertInterval = setInterval(function() {
+    var sec = Math.floor((new Date() - start) / 1000);
+    var m = Math.floor(sec / 60), s = sec % 60;
+    document.getElementById('alert-age').textContent = m + 'm ' + (s < 10 ? '0' : '') + s + 's ago';
+  }, 1000);
+}
+function hideAlert() {
+  document.getElementById('alert-banner').style.display = 'none';
+  clearInterval(alertInterval);
+}
+
+function addFeedItem(c, status) {
+  var list = document.getElementById('feed-list');
+  var div = document.createElement('div');
+  div.className = 'feed-item';
+  var icon = status === 'blocked' ? '<div class="fi-icon fi-red">⚠</div>' : '<div class="fi-icon fi-green">✓</div>';
+  var badge = status === 'blocked' ? '<div class="fi-badge badge-red">BLOCKED</div>' : '<div class="fi-badge badge-green">CLEAR</div>';
+  div.innerHTML = icon + '<div class="fi-info"><div class="fi-name">' + c.name + '</div><div class="fi-meta">Reported by you just now</div></div>' + badge;
+  list.insertBefore(div, list.firstChild);
+}
+
+function timeAgo(date) {
+  var sec = Math.floor((new Date() - date) / 1000);
+  if (sec < 60) return sec + 's ago';
+  return Math.floor(sec / 60) + 'm ago';
+}
+
+function showTab(name) {
+  document.getElementById('tab-report').style.display = name === 'report' ? 'block' : 'none';
+  document.getElementById('tab-feed').style.display = name === 'feed' ? 'block' : 'none';
+  document.querySelectorAll('.tab').forEach(function(t, i) {
+    t.classList.toggle('active', (i === 0 && name === 'report') || (i === 1 && name === 'feed'));
+  });
+}
+
+// Pre-loaded Haslet, TX crossings
+addCrossing(32.9461302, -97.3621606, 'Blue Mound Rd & John Day Rd');
+addCrossing(32.9700611, -97.3587789, 'Avondale-Haslet Rd & John Day Rd');
+
+// Center map on Haslet crossings by default until GPS kicks in
+map.setView([32.9581, -97.3605], 13);
+
+// Init
+locate();
+
+// Fix map size after layout
+setTimeout(function() { map.invalidateSize(); }, 200);
+</script>
+</body>
+</html>
