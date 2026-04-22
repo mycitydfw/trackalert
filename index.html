@@ -428,10 +428,16 @@ function addFeedItem(c, status) {
   list.insertBefore(div, list.firstChild);
 }
 
-function timeAgo(date) {
-  var sec = Math.floor((new Date() - date) / 1000);
-  if (sec < 60) return sec + 's ago';
-  return Math.floor(sec / 60) + 'm ago';
+function timeAgo(date){
+  if(!date) return 'just now';
+  var sec=Math.floor((new Date()-new Date(date))/1000);
+  if(sec<5) return 'just now';
+  if(sec<60) return sec+'s ago';
+  var min=Math.floor(sec/60);
+  if(min<60) return min+'m ago';
+  var hrs=Math.floor(min/60);
+  if(hrs<24) return hrs+'h ago';
+  return Math.floor(hrs/24)+'d ago';
 }
 
 function showTab(name) {
