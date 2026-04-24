@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>TrackAlert — Haslet Trains</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',system-ui,sans-serif;background:#07080d;color:#f0ede8;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+    #header{background:#0f1117;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1e2130;flex-shrink:0;z-index:1000}
+    .logo{font-size:17px;font-weight:700;color:#f5a623;letter-spacing:-0.5px}.logo span{color:#f0ede8}
+    #header-right{display:flex;align-items:center;gap:10px}
+    #gps-status{display:flex;align-items:center;gap:5px;font-size:11px;color:#7a8099}
+    .status-dot{width:7px;height:7px;border-radius:50%;background:#444;flex-shrink:0;transition:background 0.3s}
+    .status-dot.locating{background:#f5a623;animation:blink 1s infinite}
+    .status-dot.found{background:#3ecf8e}
+    .status-dot.error{background:#e53e30}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+    #notif-btn{background:#141720;border:1px solid #252b3b;border-radius:8px;padding:5px 9px;font-size:11px;color:#7a8099;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap}
+    #notif-btn.voice{border-color:#f5a623;color:#f5a623}
+    #notif-btn.silent{border-color:#4a90e2;color:#4a90e2}
+    #alert-banner{background:rgba(229,62,48,0.13);border-bottom:1px solid rgba(229,62,48,0.28);padding:8px 14px;display:none;align-items:center;gap:10px;font-size:12px;flex-shrink:0;z-index:999}
+    .alert-dot{width:8px;height:8px;border-radius:50%;background:#e53e30;flex-shrink:0;animation:blink 1s infinite}
+    #alert-text{flex:1;font-weight:500}
+    #alert-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+    #alert-age{color:#e53e30;font-size:11px;font-family:monospace}
+    #alert-confirms{font-size:10px;color:#f5a623}
+    #map{flex:1;z-index:1;min-height:0}
+    #panel{background:#0f1117;border-top:1px solid #1e2130;flex-shrink:0;z-index:1000}
+    #panel-tabs{display:flex;border-bottom:1px solid #1e2130}
+    .tab{flex:1;padding:9px 4px;text-align:center;font-size:12px;color:#7a8099;cursor:pointer;border-bottom:2px solid transparent;transition:color 0.15s}
+    .tab.active{color:#f5a623;border-bottom:2px solid #f5a623}
+    #tab-report{display:block;padding:12px 14px}
+    #tab-feed{display:none;padding:10px 14px;max-height:210px;overflow-y:auto}
+    #tab-history{display:none;padding:10px 14px;max-height:210px;overflow-y:auto}
+    #tab-feed::-webkit-scrollbar,#tab-history::-webkit-scrollbar{width:3px}
+    #tab-feed::-webkit-scrollbar-thumb,#tab-history::-webkit-scrollbar-thumb{background:#252b3b;border-radius:2px}
+    .field-label{font-size:10px;color:#7a8099;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:5px;font-weight:500}
+    #crossing-select{width:100%;padding:9px 12px;background:#141720;border:1px solid #252b3b;border-radius:10px;color:#f0ede8;font-size:13px;appearance:none;cursor:pointer;margin-bottom:10px}
+    #crossing-select option{background:#141720}
+    #status-toggle{display:flex;gap:8px;margin-bottom:10px}
+    .status-btn{flex:1;padding:9px;border-radius:10px;border:1px solid #252b3b;background:#141720;color:#7a8099;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:5px}
+    .status-btn.sel-blocked{background:rgba(229,62,48,0.18);border-color:#e53e30;color:#f07068}
+    .status-btn.sel-clear{background:rgba(62,207,142,0.12);border-color:#3ecf8e;color:#3ecf8e}
+    #action-row{display:flex;gap:8px;margin-bottom:8px}
+    #submit-btn{flex:2;padding:13px;background:#f5a623;border:none;border-radius:12px;color:#0f1117;font-size:14px;font-weight:700;cursor:pointer;transition:background 0.15s,transform 0.1s;display:flex;align-items:center;justify-content:center;gap:7px}
+    #submit-btn:hover{background:#f7b84b}
+    #submit-btn:active{transform:scale(0.98)}
+    #confirm-btn{flex:1;padding:10px;background:#141720;border:1px solid #252b3b;border-radius:12px;color:#7a8099;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+    #confirm-btn.active{border-color:#f5a623;color:#f5a623;background:rgba(245,166,35,0.08)}
+    #confirm-btn.done{border-color:#3ecf8e;color:#3ecf8e;background:rgba(62,207,142,0.08)}
+    #confirm-count{font-size:20px;font-weight:700;line-height:1}
+    #confirm-label{font-size:9px;letter-spacing:0.5px}
+    #add-crossing-btn{width:100%;padding:8px;background:transparent;border:1px dashed #2a3050;border-radius:10px;color:#7a8099;font-size:12px;cursor:pointer;transition:border-color 0.15s,color 0.15s}
+    #add-crossing-btn:hover,#add-crossing-btn.adding{border-color:#f5a623;color:#f5a623;background:rgba(245,166,35,0.07)}
+    .feed-item{background:#141720;border:1px solid #1e2130;border-radius:10px;padding:9px 12px;display:flex;align-items:center;gap:10px;margin-bottom:7px;animation:slideIn 0.25s ease}
+    @keyframes slideIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+    .fi-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+    .fi-red{background:rgba(229,62,48,0.15)}.fi-green{background:rgba(62,207,142,0.1)}.fi-blue{background:rgba(74,144,226,0.12)}
+    .fi-info{flex:1;min-width:0}
+    .fi-name{font-size:12px;font-weight:500;color:#f0ede8}
+    .fi-meta{font-size:10px;color:#7a8099;margin-top:2px}
+    .fi-badge{font-size:10px;font-family:monospace;padding:3px 7px;border-radius:6px;flex-shrink:0}
+    .badge-red{background:rgba(229,62,48,0.15);color:#f07068}
+    .badge-green{background:rgba(62,207,142,0.12);color:#3ecf8e}
+    .badge-blue{background:rgba(74,144,226,0.12);color:#4a90e2}
+    .history-card{background:#141720;border:1px solid #1e2130;border-radius:10px;padding:10px 12px;margin-bottom:8px}
+    .history-name{font-size:13px;font-weight:600;color:#f0ede8;margin-bottom:6px}
+    .history-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+    .history-label{font-size:11px;color:#7a8099}
+    .history-val{font-size:11px;color:#f5a623;font-family:monospace;font-weight:600}
+    .pattern-bar{height:4px;background:#1e2130;border-radius:2px;margin-top:6px;overflow:hidden}
+    .pattern-fill{height:100%;border-radius:2px;background:#f5a623;transition:width 0.5s}
+    .peak-times{font-size:10px;color:#7a8099;margin-top:5px}
+    .peak-time-pill{display:inline-block;background:rgba(245,166,35,0.12);color:#f5a623;border-radius:6px;padding:2px 7px;margin:2px 2px 0 0;font-size:10px;font-family:monospace}
+    .no-history{text-align:center;color:#7a8099;font-size:12px;padding:20px 0}
+    #stats{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #1e2130;padding:8px 0 4px}
+    .stat{text-align:center}
+    .stat-num{font-size:16px;font-weight:700;color:#f5a623;font-family:monospace}
+    .stat-label{font-size:9px;color:#7a8099;margin-top:1px}
+    #locate-btn{position:absolute;bottom:14px;right:12px;z-index:500;background:#0f1117;border:1px solid #252b3b;border-radius:10px;padding:9px 12px;color:#f5a623;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 12px rgba(0,0,0,0.5)}
+    #map-hint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:500;background:rgba(245,166,35,0.92);color:#0f1117;font-size:12px;font-weight:600;padding:6px 14px;border-radius:20px;display:none;pointer-events:none;white-space:nowrap}
+    .leaflet-control-zoom a{background:#141720!important;color:#f0ede8!important;border-color:#252b3b!important}
+    .leaflet-bar{border:1px solid #252b3b!important;border-radius:8px!important;overflow:hidden}
+    .leaflet-popup-content-wrapper{background:#141720;color:#f0ede8;border:1px solid #252b3b;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.6)}
+    .leaflet-popup-tip{background:#141720}
+    .leaflet-popup-close-button{color:#7a8099!important}
+    .popup-inner{padding:4px 2px}
+    .popup-name{font-weight:600;font-size:13px;color:#f0ede8;margin-bottom:4px}
+    .popup-status-red{font-size:11px;color:#f07068}.popup-status-green{font-size:11px;color:#3ecf8e}.popup-status-uk{font-size:11px;color:#f5a623}
+    .popup-confirms{font-size:10px;color:#f5a623;margin-top:2px}
+    .popup-time{font-size:10px;color:#7a8099;margin-top:2px}
+    .popup-pattern{font-size:10px;color:#4a90e2;margin-top:3px}
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <div class="logo">Track<span>Alert</span></div>
+  <div id="header-right">
+    <button id="notif-btn" onclick="toggleNotifMode()">&#128266; Voice</button>
+    <div id="gps-status"><div class="status-dot locating" id="dot"></div><span id="gps-label">Locating…</span></div>
+  </div>
+</div>
+
+<div id="alert-banner">
+  <div class="alert-dot"></div>
+  <div id="alert-text"></div>
+  <div id="alert-right">
+    <div id="alert-age"></div>
+    <div id="alert-confirms"></div>
+  </div>
+</div>
+
+<div style="position:relative;flex:1;display:flex;flex-direction:column;min-height:0">
+  <div id="map"></div>
+  <button id="locate-btn" onclick="goToMe()">&#8982; My location</button>
+  <div id="map-hint">Tap the map to place a crossing marker</div>
+</div>
+
+<div id="panel">
+  <div id="panel-tabs">
+    <div class="tab active" onclick="showTab('report')">&#9888; Report</div>
+    <div class="tab" onclick="showTab('feed')">&#9776; Activity</div>
+    <div class="tab" onclick="showTab('history')">&#128200; Patterns</div>
+  </div>
+
+  <div id="tab-report">
+    <div class="field-label">Crossing</div>
+    <select id="crossing-select"><option value="">— Select a crossing —</option></select>
+    <div class="field-label">Status</div>
+    <div id="status-toggle">
+      <button class="status-btn sel-blocked" id="btn-blocked" onclick="setStatus('blocked')">&#9888; Train blocking</button>
+      <button class="status-btn" id="btn-clear" onclick="setStatus('clear')">&#10003; All clear</button>
+    </div>
+    <div id="action-row">
+      <button id="submit-btn" onclick="submitReport()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Report Now
+      </button>
+    </div>
+    <button id="add-crossing-btn" onclick="startAddCrossing()">+ Add a crossing at a map location</button>
+  </div>
+
+  <div id="tab-feed"><div id="feed-list"></div></div>
+  <div id="tab-history"><div id="history-list"></div></div>
+
+  <div id="stats">
+    <div class="stat"><div class="stat-num" id="s-users">—</div><div class="stat-label">Nearby users</div></div>
+    <div class="stat"><div class="stat-num" id="s-reports">0</div><div class="stat-label">Total reports</div></div>
+    <div class="stat"><div class="stat-num" id="s-crossings">0</div><div class="stat-label">Crossings</div></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+window.addEventListener('load', function() {
+
+// FIREBASE
+var reportsRef=null, totalReportsRef=null, confirmsRef=null, historyRef=null;
+try {
+  if (typeof firebase !== 'undefined') {
+    firebase.initializeApp({
+      apiKey:"AIzaSyCzjAtQQMDVotLvWvi33ECaN5wlqC71TNQ",
+      authDomain:"haslet-trains.firebaseapp.com",
+      databaseURL:"https://haslet-trains-default-rtdb.firebaseio.com",
+      projectId:"haslet-trains",
+      storageBucket:"haslet-trains.firebasestorage.app",
+      messagingSenderId:"861304198248",
+      appId:"1:861304198248:web:4394570774536eaa8e57dd"
+    });
+    var db=firebase.database();
+    reportsRef=db.ref('reports');
+    totalReportsRef=db.ref('totalReports');
+    confirmsRef=db.ref('confirms');
+    historyRef=db.ref('history');
+  }
+} catch(e){console.warn('Firebase unavailable:',e);}
+
+// STATE
+var crossings=[], selectedStatus='blocked', addingMode=false;
+var userLat, userLng, userMarker, userCircle;
+var notifMode=localStorage.getItem('notifMode')||'voice';
+var femaleVoice=null;
+var ALERT_DISTANCE_METERS=600, CLEAR_AFTER_MS=15*60*1000;
+var alertInterval, alertIntervals={};
+var lastSpokenCrossing=null, lastSpokenTime=0;
+var localHistory=JSON.parse(localStorage.getItem('crossingHistory')||'{}');
+
+// MAP
+var map=L.map('map',{zoomControl:true,attributionControl:false}).setView([32.9200,-97.3500],12);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}).addTo(map);
+
+// ICONS
+function crossingIcon(status){
+  var color=status==='blocked'?'#e53e30':status==='clear'?'#3ecf8e':'#f5a623';
+  var sym=status==='blocked'?'⚠':status==='clear'?'✓':'?';
+  return L.divIcon({html:'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48" viewBox="0 0 40 48"><circle cx="20" cy="20" r="17" fill="'+color+'" fill-opacity="0.18" stroke="'+color+'" stroke-width="2"/><text x="20" y="26" text-anchor="middle" font-size="16" fill="'+color+'">'+sym+'</text><line x1="20" y1="37" x2="20" y2="47" stroke="'+color+'" stroke-width="2" stroke-linecap="round"/></svg>',className:'',iconSize:[40,48],iconAnchor:[20,47],popupAnchor:[0,-48]});
+}
+function userIcon(){
+  return L.divIcon({html:'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#4a90e2" fill-opacity="0.25" stroke="#4a90e2" stroke-width="2"/><circle cx="10" cy="10" r="4" fill="#4a90e2"/></svg>',className:'',iconSize:[20,20],iconAnchor:[10,10]});
+}
+
+// CROSSINGS
+function addCrossing(lat,lng,name){
+  var c={lat:lat,lng:lng,name:name,status:'unknown',lastReport:null,confirms:0};
+  var m=L.marker([lat,lng],{icon:crossingIcon('unknown')}).addTo(map);
+  m.bindPopup(buildPopup(c));
+  m.on('click',function(){selectCrossingByIdx(crossings.length-1);showTab('report');});
+  c.marker=m; crossings.push(c);
+  refreshSelect();
+  document.getElementById('s-crossings').textContent=crossings.length;
+  return c;
+}
+
+function buildPopup(c){
+  var sc=c.status==='blocked'?'popup-status-red':c.status==='clear'?'popup-status-green':'popup-status-uk';
+  var st=c.status==='blocked'?'⚠ Train blocking':c.status==='clear'?'✓ Clear':'? Unknown';
+  var ct=c.confirms>0?'<div class="popup-confirms">'+c.confirms+' neighbor'+(c.confirms>1?'s':'')+' confirmed</div>':'';
+  var tt=c.lastReport?'Updated '+timeAgo(c.lastReport):'No reports yet';
+  var pat=getCrossingPattern(c.name);
+  var ps=pat?'<div class="popup-pattern">&#128200; Usually blocks around '+pat+'</div>':'';
+  return '<div class="popup-inner"><div class="popup-name">'+c.name+'</div><div class="'+sc+'">'+st+'</div>'+ct+'<div class="popup-time">'+tt+'</div>'+ps+'</div>';
+}
+
+function refreshSelect(){
+  var sel=document.getElementById('crossing-select'),val=sel.value;
+  sel.innerHTML='<option value="">— Select a crossing —</option>';
+  crossings.forEach(function(c,i){
+    var o=document.createElement('option');
+    o.value=i; o.textContent=c.name+(c.status==='blocked'?' ⚠':c.status==='clear'?' ✓':'');
+    sel.appendChild(o);
+  });
+  if(val!=='') sel.value=val;
+  updateConfirmBtn();
+}
+
+function selectCrossingByIdx(idx){
+  document.getElementById('crossing-select').value=idx;
+  updateConfirmBtn();
+}
+
+// NOTIF TOGGLE
+function toggleNotifMode(){
+  notifMode=notifMode==='voice'?'silent':'voice';
+  localStorage.setItem('notifMode',notifMode);
+  updateNotifBtn();
+}
+function updateNotifBtn(){
+  var btn=document.getElementById('notif-btn');
+  var quiet=isQuietHours();
+  if(notifMode==='voice'){
+    btn.textContent=quiet?'🔇 Quiet hrs':'🔊 Voice';
+    btn.className=quiet?'silent':'voice';
+  } else {
+    btn.textContent='🔕 Silent';
+    btn.className='silent';
+  }
+}
+updateNotifBtn();
+
+// VOICE
+function initVoice(){
+  if(!window.speechSynthesis) return;
+  function load(){
+    var vs=window.speechSynthesis.getVoices();
+    var pref=['Samantha','Google US English','Microsoft Zira','Karen','Moira','Victoria','Fiona','Tessa','Google UK English Female'];
+    for(var p=0;p<pref.length;p++){for(var v=0;v<vs.length;v++){if(vs[v].name.indexOf(pref[p])!==-1){femaleVoice=vs[v];break;}}if(femaleVoice)break;}
+    if(!femaleVoice) for(var v=0;v<vs.length;v++){if(vs[v].name.toLowerCase().indexOf('female')!==-1){femaleVoice=vs[v];break;}}
+    if(!femaleVoice&&vs.length>0) femaleVoice=vs[0];
+  }
+  load();
+  if(window.speechSynthesis.onvoiceschanged!==undefined) window.speechSynthesis.onvoiceschanged=load;
+}
+function isQuietHours(){
+  var h=new Date().getHours();
+  return h>=20||h<6;
+}
+function speak(text){
+  if(notifMode!=='voice'||!window.speechSynthesis||isQuietHours()) return;
+  window.speechSynthesis.cancel();
+  var msg=new SpeechSynthesisUtterance(text);
+  if(femaleVoice) msg.voice=femaleVoice;
+  msg.rate=0.92; msg.pitch=1.1; msg.volume=1.0;
+  window.speechSynthesis.speak(msg);
+}
+
+// BACKGROUND NOTIFICATIONS
+function requestNotif(){
+  if('Notification' in window && Notification.permission==='default') Notification.requestPermission();
+}
+function sendNotification(title,body){
+  if(!('Notification' in window)||Notification.permission!=='granted') return;
+  new Notification(title,{body:body,tag:'trackalert',renotify:true});
+}
+
+// GPS
+function locate(){
+  if(!navigator.geolocation){setGPSStatus('error','No GPS');return;}
+  navigator.geolocation.getCurrentPosition(function(pos){
+    userLat=pos.coords.latitude; userLng=pos.coords.longitude;
+    setGPSStatus('found',userLat.toFixed(4)+', '+userLng.toFixed(4));
+    updateUserMarker(userLat,userLng,pos.coords.accuracy);
+    map.setView([userLat,userLng],15);
+    document.getElementById('s-users').textContent=Math.floor(Math.random()*80)+20;
+    checkProximity(userLat,userLng);
+    requestNotif();
+  },function(){setGPSStatus('error','Location denied');},{enableHighAccuracy:true,timeout:10000});
+}
+function startWatching(){
+  if(!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(function(pos){
+    userLat=pos.coords.latitude; userLng=pos.coords.longitude;
+    updateUserMarker(userLat,userLng,pos.coords.accuracy);
+    checkProximity(userLat,userLng);
+  },null,{enableHighAccuracy:true,maximumAge:5000});
+}
+function updateUserMarker(lat,lng,acc){
+  if(userMarker) map.removeLayer(userMarker);
+  if(userCircle) map.removeLayer(userCircle);
+  userCircle=L.circle([lat,lng],{radius:acc||30,color:'#4a90e2',fillColor:'#4a90e2',fillOpacity:0.08,weight:1}).addTo(map);
+  userMarker=L.marker([lat,lng],{icon:userIcon()}).addTo(map);
+}
+function goToMe(){if(userLat) map.setView([userLat,userLng],16); else locate();}
+function setGPSStatus(state,label){
+  document.getElementById('dot').className='status-dot '+state;
+  document.getElementById('gps-label').textContent=label;
+}
+
+// PROXIMITY
+function haversineMeters(lat1,lng1,lat2,lng2){
+  var R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180;
+  var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function checkProximity(lat,lng){
+  var now=Date.now();
+  crossings.forEach(function(c){
+    var dist=haversineMeters(lat,lng,c.lat,c.lng);
+    if(dist<=ALERT_DISTANCE_METERS){
+      var cool=(lastSpokenCrossing!==c.name)||(now-lastSpokenTime>90000);
+      if(cool){
+        lastSpokenCrossing=c.name; lastSpokenTime=now;
+        var msg=c.status==='blocked'?'Railroad Crossing Ahead. Train is currently blocking the road.':'Railroad Crossing Ahead.';
+        speak(msg);
+        sendNotification('Railroad Crossing Ahead',c.name+(c.status==='blocked'?' — Train blocking!':' ahead'));
+        showProximityBanner(c,Math.round(dist));
+      }
+    }
+  });
+}
+function showProximityBanner(c,dist){
+  document.getElementById('alert-text').textContent='Railroad Crossing Ahead — '+c.name+' ('+dist+'m)';
+  document.getElementById('alert-banner').style.display='flex';
+  if(c.status!=='blocked'){document.getElementById('alert-age').textContent='approaching';document.getElementById('alert-confirms').textContent='';}
+}
+
+// REPORT
+function setStatus(s){
+  selectedStatus=s;
+  document.getElementById('btn-blocked').classList.toggle('sel-blocked',s==='blocked');
+  document.getElementById('btn-clear').classList.toggle('sel-clear',s==='clear');
+}
+function submitReport(){
+  var idx=document.getElementById('crossing-select').value;
+  if(idx===''){alert('Please select a crossing first.');return;}
+  var c=crossings[parseInt(idx)]; if(!c) return;
+  var btn=document.getElementById('submit-btn');
+  applyReport(c,selectedStatus,new Date(),0);
+  btn.style.background=selectedStatus==='blocked'?'#e53e30':'#3ecf8e';
+  btn.style.color=selectedStatus==='blocked'?'#fff':'#0f1117';
+  btn.textContent=selectedStatus==='blocked'?'✓ Alerting neighbors!':'✓ All clear reported!';
+  btn.disabled=true;
+  try{
+    if(reportsRef) reportsRef.push({crossingName:c.name,status:selectedStatus,timestamp:firebase.database.ServerValue.TIMESTAMP,lat:c.lat,lng:c.lng}).catch(function(e){console.warn(e);});
+    if(totalReportsRef) totalReportsRef.transaction(function(n){return(n||0)+1;});
+    if(historyRef){var now=new Date(),key=c.name.replace(/[^a-zA-Z0-9]/g,'_');historyRef.child(key).push({status:selectedStatus,timestamp:firebase.database.ServerValue.TIMESTAMP,hour:now.getHours(),day:now.getDay()});}
+    if(confirmsRef){var ck=c.name.replace(/[^a-zA-Z0-9]/g,'_');confirmsRef.child(ck).set(0);}
+  }catch(e){console.warn(e);}
+  saveLocalHistory(c.name,selectedStatus,new Date());
+  addFeedItem(c,selectedStatus,new Date(),'you');
+  setTimeout(function(){
+    btn.disabled=false; btn.style.background=''; btn.style.color='';
+    btn.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Report Now';
+  },2500);
+}
+function applyReport(c,status,date,confirms){
+  c.status=status; c.lastReport=date; c.confirms=confirms||0;
+  if(status==='blocked') c.blockedAt=c.blockedAt||date;
+  else c.blockedAt=null;
+  c.marker.setIcon(crossingIcon(status));
+  c.marker.setPopupContent(buildPopup(c));
+  refreshSelect();
+  if(status==='blocked') showAlert(c); else hideAlert();
+}
+
+// CONFIRM
+function updateConfirmBtn(){
+  var btn=document.getElementById('confirm-btn');
+  if(!btn) return;
+  var idx=document.getElementById('crossing-select').value;
+  var count=document.getElementById('confirm-count');
+  if(idx===''){btn.className='';if(count)count.textContent='0';return;}
+  var c=crossings[parseInt(idx)]; if(!c) return;
+  if(count) count.textContent=c.confirms||0;
+  btn.className=c.status==='blocked'?'active':'';
+}
+document.getElementById('crossing-select').addEventListener('change',updateConfirmBtn);
+
+function confirmReport(){
+  var idx=document.getElementById('crossing-select').value;
+  if(idx===''){alert('Please select a crossing first.');return;}
+  var c=crossings[parseInt(idx)];
+  if(!c||c.status!=='blocked'){alert('No active blocked report to confirm.');return;}
+  c.confirms=(c.confirms||0)+1;
+  c.marker.setPopupContent(buildPopup(c));
+  updateConfirmBtn(); updateAlertConfirms(c);
+  addFeedItem(c,'confirm',new Date(),'you');
+  var btn=document.getElementById('confirm-btn');
+  btn.className='done'; btn.disabled=true;
+  setTimeout(function(){btn.className='active';btn.disabled=false;},3000);
+  try{if(confirmsRef){var ck=c.name.replace(/[^a-zA-Z0-9]/g,'_');confirmsRef.child(ck).transaction(function(n){return(n||0)+1;});}}catch(e){console.warn(e);}
+}
+function updateAlertConfirms(c){
+  if(c.status==='blocked') document.getElementById('alert-confirms').textContent=c.confirms>0?c.confirms+' neighbor'+(c.confirms>1?'s':'')+' confirmed':'';
+}
+
+// ALERT BANNER
+var alertIntervals = {};
+var clearTimers = {};
+
+function showAlert(c){
+  c.blockedAt = c.blockedAt || new Date();
+  document.getElementById('alert-text').textContent='Train blocking '+c.name;
+  document.getElementById('alert-banner').style.display='flex';
+  updateAlertConfirms(c);
+  if(alertIntervals[c.name]) clearInterval(alertIntervals[c.name]);
+  alertIntervals[c.name]=setInterval(function(){
+    if(c.status!=='blocked'||!c.blockedAt){clearInterval(alertIntervals[c.name]);return;}
+    var el=new Date()-c.blockedAt,sec=Math.floor(el/1000),m=Math.floor(sec/60),s=sec%60,rm=Math.max(0,Math.floor((CLEAR_AFTER_MS-el)/60000));
+    document.getElementById('alert-age').textContent=m+'m '+(s<10?'0':'')+s+'s · clears in '+rm+'m';
+  },1000);
+}
+
+function hideAlert(){
+  var anyBlocked=crossings.some(function(x){return x.status==='blocked';});
+  if(!anyBlocked){
+    document.getElementById('alert-banner').style.display='none';
+    document.getElementById('alert-age').textContent='';
+  }
+}
+
+// Poll every 30 seconds — clears any crossing blocked for 15+ min
+setInterval(function(){
+  var now=new Date();
+  crossings.forEach(function(c){
+    if(c.status==='blocked'&&c.blockedAt&&(now-c.blockedAt)>=CLEAR_AFTER_MS){
+      autoClearCrossing(c);
+    }
+  });
+},30000);
+function autoClearCrossing(c){
+  c.status='clear'; c.lastReport=new Date(); c.confirms=0; c.blockedAt=null;
+  if(alertIntervals[c.name]) clearInterval(alertIntervals[c.name]);
+  c.marker.setIcon(crossingIcon('clear')); c.marker.setPopupContent(buildPopup(c));
+  refreshSelect(); hideAlert();
+  addFeedItem(c,'clear',new Date(),'auto');
+  speak('Railroad crossing is now clear.');
+  sendNotification('Crossing Cleared',c.name+' is now clear.');
+}
+
+// FEED
+function addFeedItem(c,status,date,source){
+  var list=document.getElementById('feed-list');
+  if(list.children.length>30) list.removeChild(list.lastChild);
+  var div=document.createElement('div'); div.className='feed-item';
+  var icon,badge;
+  if(status==='blocked'){icon='<div class="fi-icon fi-red">&#9888;</div>';badge='<div class="fi-badge badge-red">BLOCKED</div>';}
+  else if(status==='confirm'){icon='<div class="fi-icon fi-blue">&#10003;</div>';badge='<div class="fi-badge badge-blue">CONFIRMED</div>';}
+  else{icon='<div class="fi-icon fi-green">&#10003;</div>';badge='<div class="fi-badge badge-green">CLEAR</div>';}
+  var who=source==='you'?'You':source==='auto'?'Auto-expired':'Community';
+  div.innerHTML=icon+'<div class="fi-info"><div class="fi-name">'+c.name+'</div><div class="fi-meta">'+who+' · '+timeAgo(date)+'</div></div>'+badge;
+  list.insertBefore(div,list.firstChild);
+}
+
+// HISTORY & PATTERNS
+function saveLocalHistory(name,status,date){
+  if(!localHistory[name]) localHistory[name]=[];
+  localHistory[name].push({status:status,hour:date.getHours(),day:date.getDay(),ts:date.getTime()});
+  if(localHistory[name].length>200) localHistory[name]=localHistory[name].slice(-200);
+  localStorage.setItem('crossingHistory',JSON.stringify(localHistory));
+  refreshHistory();
+}
+function getCrossingPattern(name){
+  var h=localHistory[name]; if(!h||h.length<3) return null;
+  var bl=h.filter(function(x){return x.status==='blocked';}); if(bl.length<2) return null;
+  var hc={}; bl.forEach(function(x){hc[x.hour]=(hc[x.hour]||0)+1;});
+  var pk=Object.keys(hc).reduce(function(a,b){return hc[a]>hc[b]?a:b;});
+  var hi=parseInt(pk),ampm=hi>=12?'PM':'AM',h12=hi%12||12;
+  return h12+':00 '+ampm;
+}
+function getPeakTimes(name){
+  var h=localHistory[name]; if(!h||h.length<3) return [];
+  var bl=h.filter(function(x){return x.status==='blocked';}); var hc={};
+  bl.forEach(function(x){hc[x.hour]=(hc[x.hour]||0)+1;});
+  return Object.keys(hc).sort(function(a,b){return hc[b]-hc[a];}).slice(0,4).map(function(h){
+    var hi=parseInt(h),ampm=hi>=12?'PM':'AM',h12=hi%12||12; return h12+ampm;
+  });
+}
+function refreshHistory(){
+  var list=document.getElementById('history-list'); list.innerHTML='';
+  var hasAny=false;
+  crossings.forEach(function(c){
+    var hist=localHistory[c.name],blocked=hist?hist.filter(function(h){return h.status==='blocked';}):[],total=hist?hist.length:0;
+    var peaks=getPeakTimes(c.name);
+    var peakHtml=peaks.length>0?'<div class="peak-times">Peak times: '+peaks.map(function(p){return'<span class="peak-time-pill">'+p+'</span>';}).join('')+'</div>':'<div class="peak-times" style="color:#4a5068">Keep reporting to build patterns</div>';
+    var pct=total>0?Math.round((blocked.length/total)*100):0;
+    var card=document.createElement('div'); card.className='history-card';
+    card.innerHTML='<div class="history-name">'+c.name+'</div>'
+      +'<div class="history-row"><span class="history-label">Total reports</span><span class="history-val">'+total+'</span></div>'
+      +'<div class="history-row"><span class="history-label">Times blocked</span><span class="history-val">'+blocked.length+'</span></div>'
+      +'<div class="history-row"><span class="history-label">Block rate</span><span class="history-val">'+pct+'%</span></div>'
+      +'<div class="pattern-bar"><div class="pattern-fill" style="width:'+pct+'%"></div></div>'+peakHtml;
+    list.appendChild(card);
+    if(total>0) hasAny=true;
+  });
+  if(!hasAny) list.innerHTML='<div class="no-history">No history yet. Start reporting and patterns will appear here over time.</div>';
+}
+
+// FIREBASE LISTENERS
+if(reportsRef){
+  reportsRef.limitToLast(50).on('child_added',function(snap){
+    var r=snap.val(); if(!r) return;
+    var c=crossings.find(function(x){return x.name===r.crossingName;}); if(!c) return;
+    var reportTime=new Date(r.timestamp);
+    var ageMs=Date.now()-reportTime.getTime();
+
+    // Always add to activity feed so history is visible
+    addFeedItem(c, r.status, reportTime, 'community');
+    saveLocalHistory(c.name, r.status, reportTime);
+
+    // But only update map pin/alert if blocked report is under 15 min old
+    if(r.status==='blocked' && ageMs>CLEAR_AFTER_MS) return;
+    // Only apply if report is newer than what we already have
+    if(c.lastReport && reportTime<=c.lastReport) return;
+    var prev=c.status;
+    applyReport(c,r.status,reportTime,c.confirms);
+    if(r.status==='blocked'&&prev!=='blocked'){
+      sendNotification('Train Blocking!',c.name+' is blocked right now.');
+      if(userLat&&userLng){var dist=haversineMeters(userLat,userLng,c.lat,c.lng);if(dist<=ALERT_DISTANCE_METERS*3) speak('Alert. Train is blocking '+c.name);}
+    } else if(r.status==='clear'&&prev==='blocked'){
+      sendNotification('Crossing Clear',c.name+' is now clear.');
+    }
+  });
+  if(totalReportsRef) totalReportsRef.on('value',function(snap){document.getElementById('s-reports').textContent=snap.val()||0;});
+}
+
+function wireConfirmListener(c){
+  if(!confirmsRef) return;
+  var ck=c.name.replace(/[^a-zA-Z0-9]/g,'_');
+  confirmsRef.child(ck).on('value',function(snap){
+    c.confirms=snap.val()||0;
+    c.marker.setPopupContent(buildPopup(c));
+    updateConfirmBtn(); updateAlertConfirms(c);
+  });
+}
+
+// ADD CROSSING MODE
+function startAddCrossing(){
+  var btn=document.getElementById('add-crossing-btn');
+  addingMode=!addingMode;
+  btn.classList.toggle('adding',addingMode);
+  btn.textContent=addingMode?'✕ Cancel — tap map to place':'+ Add a crossing at a map location';
+  document.getElementById('map-hint').style.display=addingMode?'block':'none';
+}
+map.on('click',function(e){
+  if(!addingMode) return;
+  var name=prompt('Name this crossing:'); if(!name||!name.trim()) return;
+  var c=addCrossing(e.latlng.lat,e.latlng.lng,name.trim());
+  wireConfirmListener(c);
+  addingMode=false;
+  document.getElementById('add-crossing-btn').classList.remove('adding');
+  document.getElementById('add-crossing-btn').textContent='+ Add a crossing at a map location';
+  document.getElementById('map-hint').style.display='none';
+  showTab('report'); selectCrossingByIdx(crossings.length-1);
+});
+
+// TABS
+function showTab(name){
+  document.getElementById('tab-report').style.display=name==='report'?'block':'none';
+  document.getElementById('tab-feed').style.display=name==='feed'?'block':'none';
+  document.getElementById('tab-history').style.display=name==='history'?'block':'none';
+  document.querySelectorAll('.tab').forEach(function(t,i){
+    t.classList.toggle('active',(i===0&&name==='report')||(i===1&&name==='feed')||(i===2&&name==='history'));
+  });
+  if(name==='history') refreshHistory();
+}
+
+// HELPERS
+function timeAgo(date){
+  if(!date) return 'just now';
+  var sec=Math.floor((new Date()-new Date(date))/1000);
+  if(sec<5) return 'just now';
+  if(sec<60) return sec+'s ago';
+  var min=Math.floor(sec/60);
+  if(min<60) return min+'m ago';
+  var hrs=Math.floor(min/60);
+  if(hrs<24) return hrs+'h ago';
+  return Math.floor(hrs/24)+'d ago';
+}
+
+// INIT
+initVoice();
+addCrossing(32.946132,-97.359382,'Blue Mound Rd & John Day Rd');
+addCrossing(32.969994,-97.354408,'Avondale-Haslet Rd & John Day Rd');
+addCrossing(32.968886,-97.404158,'Avondale-Haslet Rd & US-287 (near Walmart)');
+addCrossing(32.924410,-97.361282,'Bonds Ranch Rd & US-287');
+crossings.forEach(wireConfirmListener);
+map.setView([32.9520,-97.3800],12);
+locate();
+startWatching();
+setTimeout(function(){map.invalidateSize();},200);
+
+// EXPOSE GLOBALS
+window.submitReport=submitReport;
+window.confirmReport=confirmReport;
+window.setStatus=setStatus;
+window.showTab=showTab;
+window.goToMe=goToMe;
+window.startAddCrossing=startAddCrossing;
+window.selectCrossingByIdx=selectCrossingByIdx;
+window.toggleNotifMode=toggleNotifMode;
+
+}); // end window.onload
+</script>
+</body>
+</html>
